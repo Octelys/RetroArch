@@ -22,7 +22,7 @@ jobs:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          ref: octelys/main
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -40,13 +40,13 @@ jobs:
         id: check
         run: |
           UPSTREAM_SHA=$(git rev-parse upstream/master)
-          FORK_SHA=$(git rev-parse octelys/main)
+          FORK_SHA=$(git rev-parse main)
           echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
 
           # Count commits upstream has that the fork does not
-          NEW=$(git rev-list --count octelys/main..upstream/master)
+          NEW=$(git rev-list --count main..upstream/master)
           echo "new_commits=$NEW" >> "$GITHUB_OUTPUT"
-          echo "Upstream has $NEW new commit(s) compared to octelys/main"
+          echo "Upstream has $NEW new commit(s) compared to main"
 
       - name: Stop early if already up to date
         if: steps.check.outputs.new_commits == '0'
@@ -69,7 +69,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: octelys/upstream-sync
-          base: octelys/main
+          base: main
           title: "chore: sync upstream libretro/RetroArch (${{ steps.check.outputs.new_commits }} new commit(s))"
           body: |
             ## Upstream sync
