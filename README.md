@@ -4,7 +4,10 @@
 
 # Octelys fork
 
-Contains webhooks.
+- Deactivate extra platforms
+  - Only Linux, Windows (ARM64 and x64) and macOS builds remain active.
+  - Other could be reactivated did the need arise
+- Support for webhook.
 
 # RetroArch
 
