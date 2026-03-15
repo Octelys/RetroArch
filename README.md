@@ -2,6 +2,13 @@
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/8936/badge.svg)](https://scan.coverity.com/projects/retroarch)
 [![Crowdin](https://badges.crowdin.net/retroarch/localized.svg)](https://crowdin.com/project/retroarch)
 
+# Octelys fork
+
+- Deactivate extra platforms
+  - Only Linux, Windows (ARM64 and x64) and macOS builds remain active.
+  - Other could be reactivated did the need arise
+- Support for webhook.
+
 # RetroArch
 
 RetroArch is the reference frontend for the libretro API.
