@@ -1,0 +1,50 @@
+/*  RetroArch - A frontend for libretro.
+ *  Copyright (C) 2024 - libretro team
+ *
+ *  RetroArch is free software: you can redistribute it and/or modify it under
+ *  the terms of the GNU General Public License as published by the Free
+ *  Software Foundation, either version 3 of the License, or (at your option)
+ *  any later version.
+ *
+ *  RetroArch is distributed in the hope that it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ *  more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with RetroArch. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef __RARCH_WS_SERVER_H
+#define __RARCH_WS_SERVER_H
+
+#include <boolean.h>
+
+/**
+ * ws_server_init:
+ * @port  : TCP port to listen on (1–65535).
+ *
+ * Creates a WebSocket server that listens on 127.0.0.1 at the given port.
+ * Only one server instance is supported at a time.
+ *
+ * Returns: true on success, false on failure.
+ */
+bool ws_server_init(unsigned port);
+
+/**
+ * ws_server_poll:
+ *
+ * Services pending WebSocket events without blocking.  Call this regularly
+ * from the main loop (e.g. once per frame) while the server is running.
+ */
+void ws_server_poll(void);
+
+/**
+ * ws_server_destroy:
+ *
+ * Shuts down the WebSocket server and releases all associated resources.
+ * Safe to call even when the server is not running.
+ */
+void ws_server_destroy(void);
+
+#endif /* __RARCH_WS_SERVER_H */

@@ -12,6 +12,10 @@ HAVE_DYLIB = 1
 HAVE_D3D9 = 1
 HAVE_NETWORKING = 1
 HAVE_IFINFO = 1
+# Set HAVE_WEBSOCKET_SERVER=1 and place libwebsockets headers/libs under
+# deps/libwebsockets/ to enable the local WebSocket server (ws_server.c).
+# See deps/libwebsockets/README.md for details.
+HAVE_WEBSOCKET_SERVER = 0
 HAVE_NETPLAYDISCOVERY = 1
 HAVE_STDIN_CMD = 1
 HAVE_COMMAND = 1

@@ -2940,3 +2940,33 @@ endif
 endif
 
 ##################################
+
+##################################
+### WebSocket server           ###
+### (libwebsockets)            ###
+##################################
+
+ifeq ($(HAVE_WEBSOCKET_SERVER), 1)
+   DEFINES += -DHAVE_WEBSOCKET_SERVER
+   OBJ     += network/ws_server.o
+
+   ifneq ($(findstring Win32,$(OS)),)
+      # Windows x64 / ARM64 – headers and import-lib live under
+      # deps/libwebsockets/{x64,arm64}/.  See deps/libwebsockets/README.md.
+      INCLUDE_DIRS += -I$(DEPS_DIR)/libwebsockets/include
+      ifeq ($(ARCH), arm64)
+         LIBRARY_DIRS += -L$(DEPS_DIR)/libwebsockets/arm64
+      else
+         LIBRARY_DIRS += -L$(DEPS_DIR)/libwebsockets/x64
+      endif
+      LIBS += -lwebsockets
+   else
+      # Linux / macOS – try pkg-config first, fall back to bare -lwebsockets.
+      ifeq ($(shell pkg-config --exists libwebsockets 2>/dev/null && echo yes),yes)
+         CFLAGS += $(shell pkg-config --cflags libwebsockets)
+         LIBS   += $(shell pkg-config --libs   libwebsockets)
+      else
+         LIBS += -lwebsockets
+      endif
+   endif
+endif
