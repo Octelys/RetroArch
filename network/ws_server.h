@@ -24,7 +24,8 @@
  * ws_server_init:
  * @port  : TCP port to listen on (1–65535).
  *
- * Creates a WebSocket server that listens on 127.0.0.1 at the given port.
+ * Creates a WebSocket server that listens on 127.0.0.1 at the given port
+ * and spawns a dedicated background thread to service it.
  * Only one server instance is supported at a time.
  *
  * Returns: true on success, false on failure.
@@ -32,18 +33,11 @@
 bool ws_server_init(unsigned port);
 
 /**
- * ws_server_poll:
- *
- * Services pending WebSocket events without blocking.  Call this regularly
- * from the main loop (e.g. once per frame) while the server is running.
- */
-void ws_server_poll(void);
-
-/**
  * ws_server_destroy:
  *
- * Shuts down the WebSocket server and releases all associated resources.
- * Safe to call even when the server is not running.
+ * Signals the background service thread to stop, waits for it to exit, then
+ * releases all associated resources.  Safe to call even when the server is
+ * not running.
  */
 void ws_server_destroy(void);
 

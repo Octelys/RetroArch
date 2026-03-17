@@ -19,9 +19,12 @@
  * ws_server.c – Minimal WebSocket server for RetroArch using libwebsockets.
  *
  * The server binds exclusively to 127.0.0.1 on the caller-supplied port so
- * that it is only reachable from the local machine.  A single libwebsockets
- * "retroarch" protocol is registered; derived projects can extend the
- * callback to add application-level message handling.
+ * that it is only reachable from the local machine.  A dedicated background
+ * thread owns the libwebsockets service loop, keeping it fully decoupled from
+ * frame processing.
+ *
+ * A single libwebsockets "retroarch" protocol is registered; derived projects
+ * can extend the callback to add application-level message handling.
  *
  * Platform notes:
  *   Linux  : link with -lwebsockets (or use pkg-config libwebsockets).
@@ -34,16 +37,33 @@
 #include "ws_server.h"
 
 #include <libwebsockets.h>
+#include <rthreads/rthreads.h>
 
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 /* -------------------------------------------------------------------------
+ * Constants
+ * ---------------------------------------------------------------------- */
+
+/* Maximum inbound frame payload the server will buffer per connection.
+ * 4 KiB is sufficient for typical control messages; increase if larger
+ * payloads are expected. */
+#define WS_RX_BUFFER_BYTES 4096
+
+/* Timeout (ms) passed to lws_service() each iteration.  A short value keeps
+ * the thread responsive to stop requests without busy-spinning. */
+#define WS_SERVICE_TIMEOUT_MS 10
+
+/* -------------------------------------------------------------------------
  * Internal state
  * ---------------------------------------------------------------------- */
 
-static struct lws_context *g_lws_ctx   = NULL;
+static struct lws_context *g_lws_ctx    = NULL;
+static sthread_t           *g_thread    = NULL;
+static slock_t             *g_lock      = NULL;
+static bool                 g_running   = false;
 
 /* -------------------------------------------------------------------------
  * Protocol callback
@@ -91,10 +111,9 @@ static int callback_retroarch(struct lws *wsi,
    return 0;
 }
 
-/* Maximum inbound frame payload the server will buffer per connection.
- * 4 KiB is sufficient for typical control messages; increase if larger
- * payloads are expected. */
-#define WS_RX_BUFFER_BYTES 4096
+/* -------------------------------------------------------------------------
+ * Protocol table
+ * ---------------------------------------------------------------------- */
 
 static struct lws_protocols g_protocols[] = {
    {
@@ -106,6 +125,31 @@ static struct lws_protocols g_protocols[] = {
    },
    LWS_PROTOCOL_LIST_TERM
 };
+
+/* -------------------------------------------------------------------------
+ * Background service thread
+ * ---------------------------------------------------------------------- */
+
+static void ws_server_thread(void *userdata)
+{
+   (void)userdata;
+
+   for (;;)
+   {
+      bool running;
+
+      slock_lock(g_lock);
+      running = g_running;
+      slock_unlock(g_lock);
+
+      if (!running)
+         break;
+
+      /* lws_service() blocks for at most WS_SERVICE_TIMEOUT_MS milliseconds,
+       * then returns so we can re-check the stop flag. */
+      lws_service(g_lws_ctx, WS_SERVICE_TIMEOUT_MS);
+   }
+}
 
 /* -------------------------------------------------------------------------
  * Public API
@@ -136,21 +180,66 @@ bool ws_server_init(unsigned port)
       return false;
    }
 
+   g_lock = slock_new();
+   if (!g_lock)
+   {
+      fprintf(stderr, "[ws_server] Failed to create mutex.\n");
+      lws_context_destroy(g_lws_ctx);
+      g_lws_ctx = NULL;
+      return false;
+   }
+
+   slock_lock(g_lock);
+   g_running = true;
+   slock_unlock(g_lock);
+
+   g_thread = sthread_create(ws_server_thread, NULL);
+   if (!g_thread)
+   {
+      fprintf(stderr, "[ws_server] Failed to create service thread.\n");
+      slock_lock(g_lock);
+      g_running = false;
+      slock_unlock(g_lock);
+      slock_free(g_lock);
+      g_lock    = NULL;
+      lws_context_destroy(g_lws_ctx);
+      g_lws_ctx = NULL;
+      return false;
+   }
+
    fprintf(stderr, "[ws_server] Listening on 127.0.0.1:%u\n", port);
    return true;
 }
 
-void ws_server_poll(void)
-{
-   if (g_lws_ctx)
-      lws_service(g_lws_ctx, 0);
-}
-
 void ws_server_destroy(void)
 {
-   if (g_lws_ctx)
+   if (!g_lws_ctx)
+      return;
+
+   /* Signal the service thread to stop. */
+   if (g_lock)
    {
-      lws_context_destroy(g_lws_ctx);
-      g_lws_ctx = NULL;
+      slock_lock(g_lock);
+      g_running = false;
+      slock_unlock(g_lock);
    }
+
+   /* Wake libwebsockets so the thread exits lws_service() promptly. */
+   lws_cancel_service(g_lws_ctx);
+
+   /* Wait for the thread to finish. */
+   if (g_thread)
+   {
+      sthread_join(g_thread);
+      g_thread = NULL;
+   }
+
+   if (g_lock)
+   {
+      slock_free(g_lock);
+      g_lock = NULL;
+   }
+
+   lws_context_destroy(g_lws_ctx);
+   g_lws_ctx = NULL;
 }
