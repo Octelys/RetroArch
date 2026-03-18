@@ -59,6 +59,14 @@ jobs:
         run: |
           git checkout -B octelys/upstream-sync upstream/master
 
+      - name: Keep fork workflow files (avoid GITHUB_TOKEN workflow-push restriction)
+        if: steps.check.outputs.new_commits != '0'
+        run: |
+          # Replace upstream's .github/workflows with our fork's version
+          # so the push doesn't touch workflow files (GITHUB_TOKEN can't push those)
+          git checkout main -- .github/workflows
+          git commit -m "chore: preserve fork workflow files during upstream sync"
+
       - name: Push sync branch (force)
         if: steps.check.outputs.new_commits != '0'
         run: |
