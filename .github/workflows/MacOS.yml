@@ -18,7 +18,10 @@ jobs:
     - uses: actions/checkout@v6
 
     - name: Install libwebsockets
-      run: brew install libwebsockets
+      run: |
+        brew install libwebsockets
+        mkdir -p deps/libwebsockets/include
+        cp -r "$(brew --prefix libwebsockets)/include/" deps/libwebsockets/include/
 
     - name: Compile RA
       run: |
