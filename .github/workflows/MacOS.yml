@@ -17,6 +17,9 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
+    - name: Install libwebsockets
+      run: brew install libwebsockets
+
     - name: Compile RA
       run: |
         set -o pipefail

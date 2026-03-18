@@ -118,6 +118,13 @@ OTHER_CFLAGS[sdk=macosx*] = $(inherited) -DHAVE_OPENGL_CORE
 OTHER_CFLAGS[sdk=macosx*] = $(inherited) -DHAVE_PRESENCE
 OTHER_CFLAGS[sdk=macosx*] = $(inherited) -DHAVE_STDIN_CMD
 OTHER_CFLAGS[sdk=macosx*] = $(inherited) -DOSX
+OTHER_CFLAGS[sdk=macosx*] = $(inherited) -DHAVE_WEBSOCKET_SERVER
+
+// libwebsockets for the local WebSocket server (macOS only).
+// Installed via: brew install libwebsockets
+// Both Homebrew prefix locations (Apple Silicon and Intel) are listed.
+HEADER_SEARCH_PATHS[sdk=macosx*] = $(inherited) /opt/homebrew/include /usr/local/include
+OTHER_LDFLAGS[sdk=macosx*] = $(inherited) -L/opt/homebrew/lib -L/usr/local/lib -lwebsockets
 
 OTHER_CFLAGS_IOS_TVOS_SHARE = $(inherited) -DGLES_SILENCE_DEPRECATION
 OTHER_CFLAGS_IOS_TVOS_SHARE = $(inherited) -DHAVE_BTSTACK

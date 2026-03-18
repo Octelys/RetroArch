@@ -2946,6 +2946,24 @@ endif
 ### (libwebsockets)            ###
 ##################################
 
+# Auto-detect HAVE_WEBSOCKET_SERVER when not explicitly set.
+# - Linux / macOS: enable if pkg-config finds libwebsockets.
+# - Windows (native or MXE cross-build): must be set explicitly; the
+#   build system looks for pre-built headers/libs under deps/libwebsockets/.
+ifeq ($(HAVE_WEBSOCKET_SERVER),)
+   ifneq ($(findstring Win32,$(OS)),)
+      HAVE_WEBSOCKET_SERVER := 0
+   else ifeq ($(OS),Windows_NT)
+      HAVE_WEBSOCKET_SERVER := 0
+   else
+      ifeq ($(shell pkg-config --exists libwebsockets 2>/dev/null && echo 1),1)
+         HAVE_WEBSOCKET_SERVER := 1
+      else
+         HAVE_WEBSOCKET_SERVER := 0
+      endif
+   endif
+endif
+
 ifeq ($(HAVE_WEBSOCKET_SERVER), 1)
    DEFINES += -DHAVE_WEBSOCKET_SERVER
    OBJ     += network/ws_server.o

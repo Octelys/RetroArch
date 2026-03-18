@@ -22,12 +22,28 @@ jobs:
     steps:
     - uses: taiki-e/checkout-action@v1
 
+    - name: Install MXE libwebsockets (optional)
+      run: |
+        if apt-get install -y mxe-x86-64-w64-mingw32.shared-libwebsockets; then
+          echo "MXE libwebsockets installed; staging into deps/libwebsockets/x64/"
+          mkdir -p deps/libwebsockets/include deps/libwebsockets/x64
+          cp /usr/lib/mxe/usr/x86_64-w64-mingw32.shared/include/libwebsockets.h deps/libwebsockets/include/ || true
+          cp /usr/lib/mxe/usr/x86_64-w64-mingw32.shared/lib/libwebsockets.dll.a deps/libwebsockets/x64/ 2>/dev/null || \
+            cp /usr/lib/mxe/usr/x86_64-w64-mingw32.shared/lib/libwebsockets.a deps/libwebsockets/x64/ 2>/dev/null || true
+        else
+          echo "MXE libwebsockets not available; building without WebSocket server support"
+        fi
+
     - name: Compile RA
       run: |
         export MOC=/usr/lib/mxe/usr/x86_64-w64-mingw32.shared/qt5/bin/moc
         ./configure --host=x86_64-w64-mingw32.shared
         make clean
-        make -j$(getconf _NPROCESSORS_ONLN)
+        if [ -f deps/libwebsockets/x64/libwebsockets.dll.a ] || [ -f deps/libwebsockets/x64/libwebsockets.a ]; then
+          make -j$(getconf _NPROCESSORS_ONLN) HAVE_WEBSOCKET_SERVER=1
+        else
+          make -j$(getconf _NPROCESSORS_ONLN)
+        fi
 
     - name: Get short SHA
       id: slug
