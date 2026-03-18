@@ -20,6 +20,9 @@
 
 #include <boolean.h>
 
+/* Default TCP port used when no explicit port is supplied. */
+#define RARCH_DEFAULT_WEBSOCKET_PORT 55437
+
 /**
  * ws_server_init:
  * @port  : TCP port to listen on (1–65535).
