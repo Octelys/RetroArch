@@ -53,18 +53,25 @@ jobs:
         run: |
           echo "Fork is already up to date with upstream. Nothing to do."
 
-      - name: Reset sync branch to upstream/master
+      - name: Build sync branch (squashed, with fork workflows)
         if: steps.check.outputs.new_commits != '0'
         run: |
+          # Start from upstream/master content
           git checkout -B octelys/upstream-sync upstream/master
 
-      - name: Keep fork workflow files (avoid GITHUB_TOKEN workflow-push restriction)
-        if: steps.check.outputs.new_commits != '0'
-        run: |
-          # Replace upstream's .github/workflows with our fork's version
-          # so the push doesn't touch workflow files (GITHUB_TOKEN can't push those)
+          # Replace upstream .github/workflows with our fork's version
+          # so the final tree never differs from main on workflow files
           git checkout main -- .github/workflows
-          git commit -m "chore: preserve fork workflow files during upstream sync"
+
+          # Create a single squashed commit on top of main so the push
+          # history contains NO intermediate upstream commits that touch
+          # workflow files (GITHUB_TOKEN cannot push those).
+          TREE=$(git write-tree)
+          COMMIT=$(git commit-tree "$TREE" \
+            -p "$(git rev-parse main)" \
+            -m "chore: upstream sync to ${{ steps.check.outputs.upstream_sha }}")
+          git update-ref refs/heads/octelys/upstream-sync "$COMMIT"
+          git checkout octelys/upstream-sync
 
       - name: Push sync branch (force)
         if: steps.check.outputs.new_commits != '0'
