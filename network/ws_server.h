@@ -23,6 +23,10 @@
 /* Default TCP port used when no explicit port is supplied. */
 #define RARCH_DEFAULT_WEBSOCKET_PORT 55437
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * ws_server_init:
  * @port  : TCP port to listen on (1–65535).
@@ -43,5 +47,9 @@ bool ws_server_init(unsigned port);
  * not running.
  */
 void ws_server_destroy(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __RARCH_WS_SERVER_H */
