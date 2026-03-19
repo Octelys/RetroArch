@@ -43,6 +43,16 @@
 #include <string.h>
 #include <stdio.h>
 
+/* Some older libwebsockets versions (< 2.x / < 4.x) do not define all of the
+ * option macros we use.  Provide safe no-op fall-backs so that ws_server.c
+ * compiles against those versions as well. */
+#ifndef LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT
+#define LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT 0
+#endif
+#ifndef LWS_SERVER_OPTION_DISABLE_IPV6
+#define LWS_SERVER_OPTION_DISABLE_IPV6 0
+#endif
+
 /* -------------------------------------------------------------------------
  * Constants
  * ---------------------------------------------------------------------- */
@@ -120,10 +130,9 @@ static struct lws_protocols g_protocols[] = {
       "retroarch",          /* protocol name */
       callback_retroarch,   /* callback */
       0,                    /* per-session data size */
-      WS_RX_BUFFER_BYTES,   /* rx buffer size */
-      0, NULL, 0
+      WS_RX_BUFFER_BYTES    /* rx buffer size */
    },
-   LWS_PROTOCOL_LIST_TERM
+   { NULL, NULL, 0, 0 }    /* terminator – compatible with all lws versions */
 };
 
 /* -------------------------------------------------------------------------
