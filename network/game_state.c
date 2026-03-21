@@ -32,6 +32,12 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef HAVE_CHEEVOS
+#include "../deps/rcheevos/include/rc_client.h"
+#include "../deps/rcheevos/include/rc_consoles.h"
+#include "ws_server.h"
+#endif
+
 /* -------------------------------------------------------------------------
  * Internal state
  * ---------------------------------------------------------------------- */
@@ -211,3 +217,52 @@ size_t game_state_to_json(char *buf, size_t buf_size)
 
    return pos;
 }
+
+#ifdef HAVE_CHEEVOS
+/**
+ * game_state_update_from_cheevos:
+ *
+ * Sole entry-point for populating and broadcasting the WebSocket game
+ * state.  Called from rcheevos_client_load_game_callback() once the
+ * async RetroAchievements lookup has completed.  Builds a fresh
+ * ra_game_state_t entirely from RA data + the ROM path:
+ *
+ *   id         → game_id      (authoritative numeric RA game ID)
+ *   title      → game_name    (RA-canonical title)
+ *   console_id → console_name (human-readable via rc_console_name())
+ *   game_path  → game_path    (full filesystem path to the ROM)
+ */
+void game_state_update_from_cheevos(const rc_client_game_t *game,
+      const char *game_path)
+{
+   ra_game_state_t state;
+
+   if (!game || game->id == 0)
+      return;
+
+   memset(&state, 0, sizeof(state));
+
+   /* Authoritative numeric RA game ID */
+   snprintf(state.game_id, sizeof(state.game_id), "%u", (unsigned)game->id);
+
+   /* RA-canonical game title */
+   if (!string_is_empty(game->title))
+      strlcpy(state.game_name, game->title, sizeof(state.game_name));
+
+   /* Full filesystem path to the ROM */
+   if (!string_is_empty(game_path))
+      strlcpy(state.game_path, game_path, sizeof(state.game_path));
+
+   /* Human-readable console name */
+   if (game->console_id != 0)
+   {
+      const char *con = rc_console_name(game->console_id);
+      if (!string_is_empty(con))
+         strlcpy(state.console_name, con, sizeof(state.console_name));
+   }
+
+   game_state_set(&state);
+   ws_server_notify_game_changed();
+}
+#endif
+

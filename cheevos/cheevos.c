@@ -82,6 +82,11 @@
 #include "../deps/rcheevos/include/rc_hash.h"
 #include "../deps/rcheevos/src/rc_libretro.h"
 
+#ifdef HAVE_WEBSOCKET_SERVER
+#include "../network/game_state.h"
+#include "../network/ws_server.h"
+#endif
+
 /* Define this macro to prevent cheevos from being deactivated when they trigger. */
 #undef CHEEVOS_DONT_DEACTIVATE
 
@@ -1162,6 +1167,7 @@ const char* rcheevos_get_hash(void)
    return game ? game->hash : msg_hash_to_str(MENU_ENUM_LABEL_VALUE_NOT_AVAILABLE);
 }
 
+
 /* hooks for rc_hash library */
 
 static void* rc_hash_handle_file_open(const char* path)
@@ -1715,6 +1721,12 @@ static void rcheevos_client_load_game_callback(int result,
    }
 
    rcheevos_spectating_changed(); /* synchronize spectating state */
+
+#ifdef HAVE_WEBSOCKET_SERVER
+   /* Now that the async RA lookup is complete, hand everything to
+    * game_state — it builds and broadcasts the full record. */
+   game_state_update_from_cheevos(game, path_get(RARCH_PATH_CONTENT));
+#endif
 
 #ifdef HAVE_THREADS
    /* Have to "schedule" this. Game image should not be

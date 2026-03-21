@@ -30,6 +30,17 @@
 #include <stddef.h>
 #include <boolean.h>
 
+#ifdef HAVE_CHEEVOS
+/* Forward-declare rc_client_game_t so callers do not need to include
+ * the full rcheevos headers.  When rc_client.h has already been
+ * included the struct tag already exists, so the forward-declaration
+ * is harmless; the typedef is guarded to avoid a duplicate-typedef
+ * error in C99/C11. */
+#ifndef RC_CLIENT_H   /* rc_client.h defines this guard */
+typedef struct rc_client_game_t rc_client_game_t;
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -139,6 +150,20 @@ bool game_state_get(ra_game_state_t *out);
  * terminator), or 0 on error.  Thread-safe.
  */
 size_t game_state_to_json(char *buf, size_t buf_size);
+
+#ifdef HAVE_CHEEVOS
+/**
+ * game_state_update_from_cheevos:
+ * @game      : rc_client_game_t returned by rc_client_get_game_info().
+ * @game_path : full filesystem path to the ROM.
+ *
+ * Sole entry-point for populating and broadcasting the WebSocket game
+ * state.  Builds a fresh ra_game_state_t from the RA data and
+ * game_path, then calls game_state_set() + ws_server_notify_game_changed().
+ * Thread-safe.
+ */
+void game_state_update_from_cheevos(const rc_client_game_t *game, const char *game_path);
+#endif
 
 #ifdef __cplusplus
 }
