@@ -1708,6 +1708,10 @@ STEAM INTEGRATION USING MIST
 #include "../network/presence.c"
 #endif
 
+#if defined(HAVE_WEBSOCKET_SERVER) && !defined(_MSC_VER)
+#include "../network/ws_server.c"
+#endif
+
 /*============================================================
 CLOUD SYNC
 ============================================================ */

@@ -17,6 +17,15 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
+    - name: Install libwebsockets
+      run: |
+        brew install libwebsockets
+        mkdir -p deps/libwebsockets/include
+        cp -r "$(brew --prefix libwebsockets)/include/" deps/libwebsockets/include/
+        # Stage OpenSSL headers required transitively by libwebsockets.h
+        OPENSSL_PREFIX=$(brew --prefix openssl 2>/dev/null || brew --prefix openssl@3)
+        cp -r "${OPENSSL_PREFIX}/include/openssl" deps/libwebsockets/include/openssl
+
     - name: Compile RA
       run: |
         set -o pipefail

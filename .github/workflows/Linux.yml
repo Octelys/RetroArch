@@ -23,6 +23,9 @@ jobs:
       - name: Check Out Repo
         uses: taiki-e/checkout-action@v1
 
+      - name: Install libwebsockets
+        run: apt-get update && apt-get install -y libwebsockets-dev
+
       - name: Configure Build
         run: |
           ./configure --disable-qt --enable-xdelta

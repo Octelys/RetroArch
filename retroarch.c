@@ -175,6 +175,10 @@
 #endif
 #endif
 
+#ifdef HAVE_WEBSOCKET_SERVER
+#include "network/ws_server.h"
+#endif
+
 #ifdef HAVE_THREADS
 #include <rthreads/rthreads.h>
 #endif
@@ -5943,6 +5947,9 @@ void main_exit(void *args)
    if (menu_st)
       menu_st->flags &= ~MENU_ST_FLAG_DATA_OWN;
 #endif
+#ifdef HAVE_WEBSOCKET_SERVER
+   ws_server_destroy();
+#endif
    retroarch_ctl(RARCH_CTL_MAIN_DEINIT, NULL);
 
    if (runloop_st->perfcnt_enable)
@@ -6184,6 +6191,9 @@ int rarch_main(int argc, char *argv[], void *data)
 #ifdef HAVE_CLOUDSYNC
    if (settings->uints.cloud_sync_sync_mode == CLOUD_SYNC_MODE_AUTOMATIC)
       task_push_cloud_sync();
+#endif
+#ifdef HAVE_WEBSOCKET_SERVER
+   ws_server_init(RARCH_DEFAULT_WEBSOCKET_PORT);
 #endif
 #ifdef HAVE_LAKKA
    sd_notify(0, "READY=1");

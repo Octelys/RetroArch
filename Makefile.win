@@ -12,6 +12,9 @@ HAVE_DYLIB = 1
 HAVE_D3D9 = 1
 HAVE_NETWORKING = 1
 HAVE_IFINFO = 1
+# Set to 0 to disable the local WebSocket server. When enabled, place
+# libwebsockets headers/libs under deps/libwebsockets/ (see README).
+HAVE_WEBSOCKET_SERVER = 1
 HAVE_NETPLAYDISCOVERY = 1
 HAVE_STDIN_CMD = 1
 HAVE_COMMAND = 1

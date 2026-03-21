@@ -15,6 +15,7 @@ env:
 jobs:
   msvc:
     runs-on: windows-11-arm
+    timeout-minutes: 60
     strategy:
       matrix:
         version: [2022]
@@ -26,6 +27,18 @@ jobs:
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v1
+
+      - name: Install libwebsockets (vcpkg)
+        shell: powershell
+        run: |
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { "C:\vcpkg" }
+          & "$vcpkgRoot\vcpkg.exe" install libwebsockets:arm64-windows
+          $installed = "$vcpkgRoot\installed\arm64-windows"
+          New-Item -ItemType Directory -Force deps\libwebsockets\include | Out-Null
+          New-Item -ItemType Directory -Force deps\libwebsockets\arm64 | Out-Null
+          Copy-Item -Path "$installed\include\*" -Destination deps\libwebsockets\include -Recurse -Force
+          $lib = Get-ChildItem "$installed\lib" -Filter "websocket*.lib" | Select-Object -First 1
+          if ($lib) { Copy-Item $lib.FullName deps\libwebsockets\arm64\websockets.lib -Force }
 
       - name: Compile RA
         working-directory: "${{ github.workspace }}/pkg/msvc"
