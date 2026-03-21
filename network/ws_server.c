@@ -51,6 +51,10 @@
 #include "ws_server.h"
 #include "game_state.h"
 
+#ifdef HAVE_CHEEVOS
+#include "../cheevos/cheevos_locals.h"
+#endif
+
 #include <libwebsockets.h>
 #include <rthreads/rthreads.h>
 
@@ -86,15 +90,44 @@
  * plus JSON syntax overhead. */
 #define WS_MSG_MAX_BYTES 8192
 
+/* Maximum JSON payload for the achievements message.  A game with ~400
+ * achievements, each with a title (~60 chars) and badge URL (~80 chars),
+ * needs roughly 400 * 250 = 100 KB.  Use 256 KB to be safe. */
+#define WS_ACH_MSG_MAX_BYTES (256 * 1024)
+
+/* -------------------------------------------------------------------------
+ * Per-session write state
+ *
+ * libwebsockets fires LWS_CALLBACK_SERVER_WRITEABLE once per scheduled
+ * wsi.  We use per-session data to remember which message the client
+ * still needs so that both game-state and achievements are delivered in
+ * order without re-scheduling a broadcast for every client separately.
+ * ---------------------------------------------------------------------- */
+
+typedef enum {
+   WS_WRITE_IDLE        = 0,  /* nothing queued                  */
+   WS_WRITE_GAME_STATE  = 1,  /* send game-state next            */
+   WS_WRITE_ACHIEVEMENTS = 2  /* send achievements next          */
+} ws_write_state_t;
+
+typedef struct {
+   ws_write_state_t next_write;
+} ws_session_data_t;
+
 /* -------------------------------------------------------------------------
  * Internal state
  * ---------------------------------------------------------------------- */
 
-static struct lws_context *g_lws_ctx          = NULL;
-static sthread_t           *g_thread          = NULL;
-static slock_t             *g_lock            = NULL;
-static bool                 g_running         = false;
-static bool                 g_broadcast_pending = false;
+static struct lws_context *g_lws_ctx            = NULL;
+static sthread_t          *g_thread             = NULL;
+static slock_t            *g_lock               = NULL;
+static bool                g_running            = false;
+static bool                g_broadcast_pending  = false;
+static bool                g_ach_pending        = false;
+
+/* Tells the WRITEABLE callback which message to deliver during a broadcast.
+ * Only read/written on the service thread after draining the flags above. */
+static ws_write_state_t    g_broadcast_type     = WS_WRITE_IDLE;
 
 /* -------------------------------------------------------------------------
  * Helper: write the current game state to a single client
@@ -121,6 +154,40 @@ static void ws_write_game_state(struct lws *wsi)
    lws_write(wsi, buf + LWS_PRE, len, LWS_WRITE_TEXT);
 }
 
+/**
+ * ws_write_achievements:
+ * @wsi : the WebSocket connection to write to.
+ *
+ * Serialises the achievements list as JSON and sends it to @wsi.
+ * Must be called from within the libwebsockets service thread.
+ */
+static void ws_write_achievements(struct lws *wsi)
+{
+#ifdef HAVE_CHEEVOS
+   unsigned char *buf;
+   size_t         len;
+
+   buf = (unsigned char *)malloc(LWS_PRE + WS_ACH_MSG_MAX_BYTES);
+   if (!buf)
+      return;
+
+   {
+      const rcheevos_locals_t *locals = get_rcheevos_locals();
+      len = game_state_achievements_to_json(
+               locals ? locals->client : NULL,
+               (char *)(buf + LWS_PRE),
+               WS_ACH_MSG_MAX_BYTES);
+   }
+
+   if (len > 0)
+      lws_write(wsi, buf + LWS_PRE, len, LWS_WRITE_TEXT);
+
+   free(buf);
+#else
+   (void)wsi;
+#endif
+}
+
 /* -------------------------------------------------------------------------
  * Protocol callback
  * ---------------------------------------------------------------------- */
@@ -129,25 +196,42 @@ static int callback_retroarch(struct lws *wsi,
       enum lws_callback_reasons reason,
       void *user, void *in, size_t len)
 {
-   (void)user;
+   ws_session_data_t *session = (ws_session_data_t *)user;
+
    (void)in;
    (void)len;
 
    switch (reason)
    {
       case LWS_CALLBACK_ESTABLISHED:
-         /* A new client has connected.  Schedule an immediate write so it
-          * receives the current game state without waiting for a broadcast. */
+         /* A new client connected: queue game-state first. */
+         if (session)
+            session->next_write = WS_WRITE_GAME_STATE;
          lws_callback_on_writable(wsi);
          break;
 
       case LWS_CALLBACK_SERVER_WRITEABLE:
-         /* Send the current game state to this client. */
-         ws_write_game_state(wsi);
+         if (!session)
+            break;
+         /* If this write was triggered by a broadcast (session is IDLE),
+          * adopt the global broadcast type first. */
+         if (session->next_write == WS_WRITE_IDLE)
+            session->next_write = g_broadcast_type;
+
+         if (session->next_write == WS_WRITE_GAME_STATE)
+         {
+            ws_write_game_state(wsi);
+            session->next_write = WS_WRITE_ACHIEVEMENTS;
+            lws_callback_on_writable(wsi);
+         }
+         else if (session->next_write == WS_WRITE_ACHIEVEMENTS)
+         {
+            ws_write_achievements(wsi);
+            session->next_write = WS_WRITE_IDLE;
+         }
          break;
 
       case LWS_CALLBACK_CLOSED:
-         /* Client disconnected – nothing to clean up. */
          break;
 
       default:
@@ -163,12 +247,12 @@ static int callback_retroarch(struct lws *wsi,
 
 static struct lws_protocols g_protocols[] = {
    {
-      "retroarch",          /* protocol name */
-      callback_retroarch,   /* callback */
-      0,                    /* per-session data size */
-      WS_RX_BUFFER_BYTES    /* rx buffer size */
+      "retroarch",
+      callback_retroarch,
+      sizeof(ws_session_data_t),  /* per-session data size */
+      WS_RX_BUFFER_BYTES
    },
-   { NULL, NULL, 0, 0 }    /* terminator – compatible with all lws versions */
+   { NULL, NULL, 0, 0 }
 };
 
 /* -------------------------------------------------------------------------
@@ -183,25 +267,34 @@ static void ws_server_thread(void *userdata)
    {
       bool running;
       bool broadcast;
+      bool ach_broadcast;
 
       slock_lock(g_lock);
-      running   = g_running;
-      broadcast = g_broadcast_pending;
+      running       = g_running;
+      broadcast     = g_broadcast_pending;
+      ach_broadcast = g_ach_pending;
       if (broadcast)
          g_broadcast_pending = false;
+      if (ach_broadcast)
+         g_ach_pending = false;
       slock_unlock(g_lock);
 
       if (!running)
          break;
 
-      /* If a broadcast was requested, schedule a writeable callback for
-       * every connected client before servicing events.  This call is
-       * safe here because we are on the service thread. */
+      /* Game-state broadcast: send game_state then achievements to all. */
       if (broadcast)
+      {
+         g_broadcast_type = WS_WRITE_GAME_STATE;
          lws_callback_on_writable_all_protocol(g_lws_ctx, &g_protocols[0]);
+      }
+      /* Achievements-only broadcast (e.g. unlock update in future). */
+      else if (ach_broadcast)
+      {
+         g_broadcast_type = WS_WRITE_ACHIEVEMENTS;
+         lws_callback_on_writable_all_protocol(g_lws_ctx, &g_protocols[0]);
+      }
 
-      /* lws_service() blocks for at most WS_SERVICE_TIMEOUT_MS milliseconds,
-       * then returns so we can re-check the stop flag. */
       lws_service(g_lws_ctx, WS_SERVICE_TIMEOUT_MS);
    }
 }
@@ -305,10 +398,20 @@ void ws_server_notify_game_changed(void)
    if (!g_lws_ctx || !g_lock)
       return;
 
-   /* Set the broadcast flag under the lock so the service thread picks it
-    * up safely, then wake the service loop. */
    slock_lock(g_lock);
    g_broadcast_pending = true;
+   slock_unlock(g_lock);
+
+   lws_cancel_service(g_lws_ctx);
+}
+
+void ws_server_notify_achievements_loaded(void)
+{
+   if (!g_lws_ctx || !g_lock)
+      return;
+
+   slock_lock(g_lock);
+   g_ach_pending = true;
    slock_unlock(g_lock);
 
    lws_cancel_service(g_lws_ctx);

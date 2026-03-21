@@ -61,6 +61,17 @@ void ws_server_destroy(void);
  */
 void ws_server_notify_game_changed(void);
 
+/**
+ * ws_server_notify_achievements_loaded:
+ *
+ * Broadcasts the achievements list (obtained from
+ * game_state_achievements_to_json()) to all connected WebSocket clients.
+ * Sent as a second message immediately after ws_server_notify_game_changed()
+ * when a new game is identified.  Safe to call from any thread while the
+ * server is running; no-op when the server is not initialised.
+ */
+void ws_server_notify_achievements_loaded(void);
+
 #ifdef __cplusplus
 }
 #endif

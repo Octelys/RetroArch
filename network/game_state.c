@@ -263,6 +263,94 @@ void game_state_update_from_cheevos(const rc_client_game_t *game,
 
    game_state_set(&state);
    ws_server_notify_game_changed();
+   ws_server_notify_achievements_loaded();
+}
+
+/**
+ * game_state_achievements_to_json:
+ *
+ * Iterates all core achievements for the loaded game and serializes
+ * them as a JSON object.  Each entry contains:
+ *   id        – numeric achievement ID
+ *   name      – achievement title
+ *   points    – point value
+ *   status    – "unlocked" or "locked"
+ *   badge_url – unlocked badge image URL (omitted when unavailable)
+ */
+size_t game_state_achievements_to_json(const rc_client_t *client,
+      char *buf, size_t buf_size)
+{
+   rc_client_achievement_list_t *list;
+   size_t   pos  = 0;
+   int      n;
+   uint32_t bi, ai;
+   bool     first = true;
+
+   if (!client || !buf || buf_size < 2)
+      return 0;
+
+   /* Open the envelope */
+   n = snprintf(buf, buf_size, "{\"type\":\"achievements\",\"items\":[");
+   if (n <= 0)
+      return 0;
+   pos = (size_t)n;
+
+   /* Enumerate core achievements grouped by lock-state bucket */
+   list = rc_client_create_achievement_list(
+         (rc_client_t *)client,
+         RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE,
+         RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_LOCK_STATE);
+
+   if (list)
+   {
+      for (bi = 0; bi < list->num_buckets; bi++)
+      {
+         const rc_client_achievement_bucket_t *bucket = &list->buckets[bi];
+         for (ai = 0; ai < bucket->num_achievements; ai++)
+         {
+            const rc_client_achievement_t *ach = bucket->achievements[ai];
+            const char *status =
+                  (ach->unlocked != RC_CLIENT_ACHIEVEMENT_UNLOCKED_NONE)
+                  ? "unlocked" : "locked";
+
+            /* Separator between items */
+            if (!first)
+            {
+               if (pos + 1 < buf_size)
+                  buf[pos++] = ',';
+            }
+            first = false;
+
+            /* id, name, points, status */
+            n = snprintf(buf + pos, buf_size - pos,
+                  "{\"id\":%u,\"points\":%u,\"status\":\"%s\"",
+                  (unsigned)ach->id, (unsigned)ach->points, status);
+            if (n > 0)
+               pos += (size_t)n;
+
+            /* name – JSON-escaped via json_append_field */
+            json_append_field(buf, &pos, buf_size, "name", ach->title);
+
+            /* badge_url – use the unlocked URL when present */
+            if (!string_is_empty(ach->badge_url))
+               json_append_field(buf, &pos, buf_size, "badge_url", ach->badge_url);
+
+            /* Close the achievement object */
+            if (pos + 1 < buf_size)
+               buf[pos++] = '}';
+         }
+      }
+
+      rc_client_destroy_achievement_list(list);
+   }
+
+   /* Close array and object */
+   n = snprintf(buf + pos, buf_size - pos, "]}");
+   if (n > 0)
+      pos += (size_t)n;
+
+   buf[pos < buf_size ? pos : buf_size - 1] = '\0';
+   return pos;
 }
 #endif
 

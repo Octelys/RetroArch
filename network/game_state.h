@@ -31,12 +31,11 @@
 #include <boolean.h>
 
 #ifdef HAVE_CHEEVOS
-/* Forward-declare rc_client_game_t so callers do not need to include
- * the full rcheevos headers.  When rc_client.h has already been
- * included the struct tag already exists, so the forward-declaration
- * is harmless; the typedef is guarded to avoid a duplicate-typedef
- * error in C99/C11. */
-#ifndef RC_CLIENT_H   /* rc_client.h defines this guard */
+/* Forward-declare rcheevos types so callers do not need to pull in the
+ * full rc_client.h.  The typedefs are skipped when rc_client.h has
+ * already been included (it defines RC_CLIENT_H) to avoid duplicates. */
+#ifndef RC_CLIENT_H
+typedef struct rc_client_t      rc_client_t;
 typedef struct rc_client_game_t rc_client_game_t;
 #endif
 #endif
@@ -163,6 +162,32 @@ size_t game_state_to_json(char *buf, size_t buf_size);
  * Thread-safe.
  */
 void game_state_update_from_cheevos(const rc_client_game_t *game, const char *game_path);
+
+/**
+ * game_state_achievements_to_json:
+ * @client   : the rc_client_t that owns the loaded game.
+ * @buf      : destination buffer.
+ * @buf_size : total size of @buf in bytes.
+ *
+ * Serialises all core achievements for the currently loaded game as a
+ * JSON object of the shape:
+ *   { "type":"achievements",
+ *     "items": [
+ *       { "id":1, "name":"...", "points":5,
+ *         "status":"unlocked",
+ *         "badge_url":"https://..." },
+ *       ...
+ *     ] }
+ *
+ * "status" is "unlocked" when the achievement has been earned (softcore
+ * or hardcore), "locked" otherwise.
+ * "badge_url" is the unlocked badge URL when available, otherwise omitted.
+ *
+ * Returns the number of bytes written (excluding NUL), or 0 on error.
+ */
+size_t game_state_achievements_to_json(const rc_client_t *client,
+      char *buf, size_t buf_size);
+
 #endif
 
 #ifdef __cplusplus
