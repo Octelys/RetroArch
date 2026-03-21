@@ -177,6 +177,7 @@
 
 #ifdef HAVE_WEBSOCKET_SERVER
 #include "network/ws_server.h"
+#include "network/game_state.h"
 #endif
 
 #ifdef HAVE_THREADS
@@ -3675,6 +3676,12 @@ bool command_event(enum event_command cmd, void *data)
 
             runloop_st->flags              &= ~RUNLOOP_FLAG_CORE_RUNNING;
 
+#ifdef HAVE_WEBSOCKET_SERVER
+            /* Notify WebSocket clients that no game is running. */
+            game_state_clear();
+            ws_server_notify_game_changed();
+#endif
+
             /* The platform that uses ram_state_save calls it when the content
              * ends and writes it to a file */
             ram_state_to_file();
@@ -5949,6 +5956,7 @@ void main_exit(void *args)
 #endif
 #ifdef HAVE_WEBSOCKET_SERVER
    ws_server_destroy();
+   game_state_deinit();
 #endif
    retroarch_ctl(RARCH_CTL_MAIN_DEINIT, NULL);
 
@@ -6193,6 +6201,7 @@ int rarch_main(int argc, char *argv[], void *data)
       task_push_cloud_sync();
 #endif
 #ifdef HAVE_WEBSOCKET_SERVER
+   game_state_init();
    ws_server_init(RARCH_DEFAULT_WEBSOCKET_PORT);
 #endif
 #ifdef HAVE_LAKKA

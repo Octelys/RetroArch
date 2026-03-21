@@ -105,6 +105,11 @@
 #include "../network/presence.h"
 #endif
 
+#ifdef HAVE_WEBSOCKET_SERVER
+#include "../network/game_state.h"
+#include "../network/ws_server.h"
+#endif
+
 #define MAX_ARGS 32
 
 typedef struct content_stream content_stream_t;
@@ -1272,6 +1277,76 @@ static bool content_file_load(
 
       return false;
    }
+
+#ifdef HAVE_WEBSOCKET_SERVER
+   /* Game loaded successfully: update the in-memory game state and
+    * broadcast it to all connected WebSocket clients. */
+   {
+      ra_game_state_t     new_state;
+      core_info_t        *core_info = NULL;
+      rarch_system_info_t *sys_info = &runloop_state_get_ptr()->system;
+      const char          *s_name  = NULL;
+
+      memset(&new_state, 0, sizeof(new_state));
+
+      /* Game ID – CRC-32 supplied by the companion UI (may be empty) */
+      if (!string_is_empty(p_content->companion_ui_crc32))
+         strlcpy(new_state.game_id, p_content->companion_ui_crc32,
+               sizeof(new_state.game_id));
+
+      /* Game name (basename without extension) and full path */
+      if (p_content->content_list && p_content->content_list->size > 0)
+      {
+         content_file_info_t *fi = &p_content->content_list->entries[0];
+         if (!string_is_empty(fi->name))
+            strlcpy(new_state.game_name, fi->name,
+                  sizeof(new_state.game_name));
+         if (!string_is_empty(fi->full_path))
+            strlcpy(new_state.game_path, fi->full_path,
+                  sizeof(new_state.game_path));
+      }
+
+      /* Database / playlist name */
+      if (!string_is_empty(p_content->companion_ui_db_name))
+         strlcpy(new_state.db_name, p_content->companion_ui_db_name,
+               sizeof(new_state.db_name));
+
+      /* Console and core info from the loaded core's info file */
+      core_info_get_current_core(&core_info);
+      if (core_info)
+      {
+         if (!string_is_empty(core_info->system_id))
+            strlcpy(new_state.console_id, core_info->system_id,
+                  sizeof(new_state.console_id));
+
+         s_name = core_info->systemname;
+         if (string_is_empty(s_name))
+            s_name = core_info->display_name;
+         if (!string_is_empty(s_name))
+            strlcpy(new_state.console_name, s_name,
+                  sizeof(new_state.console_name));
+
+         s_name = core_info->core_name;
+         if (string_is_empty(s_name))
+            s_name = core_info->display_name;
+         if (!string_is_empty(s_name))
+            strlcpy(new_state.core_name, s_name,
+                  sizeof(new_state.core_name));
+      }
+
+      /* Fall back to the core's self-reported library name when the
+       * core info file is not available. */
+      if (string_is_empty(new_state.console_name))
+         strlcpy(new_state.console_name, sys_info->info.library_name,
+               sizeof(new_state.console_name));
+      if (string_is_empty(new_state.core_name))
+         strlcpy(new_state.core_name, sys_info->info.library_name,
+               sizeof(new_state.core_name));
+
+      game_state_set(&new_state);
+      ws_server_notify_game_changed();
+   }
+#endif
 
 #ifdef HAVE_CHEEVOS
    if (!special)

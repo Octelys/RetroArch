@@ -23,8 +23,22 @@
  * thread owns the libwebsockets service loop, keeping it fully decoupled from
  * frame processing.
  *
- * A single libwebsockets "retroarch" protocol is registered; derived projects
- * can extend the callback to add application-level message handling.
+ * Game-state messaging
+ * --------------------
+ * When a new client connects the server immediately sends it the current game
+ * state JSON (see game_state.h).  When the active game changes the caller
+ * invokes ws_server_notify_game_changed(); the server thread then broadcasts
+ * the updated state to every connected client.
+ *
+ * Broadcast design
+ * ----------------
+ * ws_server_notify_game_changed() is safe to call from any thread.  It sets
+ * a flag under the existing g_lock and wakes up the service thread via
+ * lws_cancel_service().  The service thread checks the flag after each
+ * lws_service() call and, if set, calls lws_callback_on_writable_all_protocol()
+ * to schedule a LWS_CALLBACK_SERVER_WRITEABLE event for every connected
+ * client.  The actual JSON write happens inside that callback, keeping all
+ * libwebsockets I/O on the service thread.
  *
  * Platform notes:
  *   Linux  : link with -lwebsockets (or use pkg-config libwebsockets).
@@ -35,6 +49,7 @@
  */
 
 #include "ws_server.h"
+#include "game_state.h"
 
 #include <libwebsockets.h>
 #include <rthreads/rthreads.h>
@@ -66,14 +81,45 @@
  * the thread responsive to stop requests without busy-spinning. */
 #define WS_SERVICE_TIMEOUT_MS 10
 
+/* Maximum JSON payload size (bytes) for a game-state message.
+ * game_path alone can be up to 4096 chars; add room for all other fields
+ * plus JSON syntax overhead. */
+#define WS_MSG_MAX_BYTES 8192
+
 /* -------------------------------------------------------------------------
  * Internal state
  * ---------------------------------------------------------------------- */
 
-static struct lws_context *g_lws_ctx    = NULL;
-static sthread_t           *g_thread    = NULL;
-static slock_t             *g_lock      = NULL;
-static bool                 g_running   = false;
+static struct lws_context *g_lws_ctx          = NULL;
+static sthread_t           *g_thread          = NULL;
+static slock_t             *g_lock            = NULL;
+static bool                 g_running         = false;
+static bool                 g_broadcast_pending = false;
+
+/* -------------------------------------------------------------------------
+ * Helper: write the current game state to a single client
+ * ---------------------------------------------------------------------- */
+
+/**
+ * ws_write_game_state:
+ * @wsi : the WebSocket connection to write to.
+ *
+ * Serialises the current game state as JSON and sends it to @wsi.
+ * Must be called from within the libwebsockets service thread
+ * (i.e. from a LWS_CALLBACK_SERVER_WRITEABLE handler).
+ */
+static void ws_write_game_state(struct lws *wsi)
+{
+   /* libwebsockets requires LWS_PRE bytes of padding before the payload. */
+   unsigned char buf[LWS_PRE + WS_MSG_MAX_BYTES];
+   size_t        len;
+
+   len = game_state_to_json((char *)(buf + LWS_PRE), WS_MSG_MAX_BYTES);
+   if (len == 0)
+      return;
+
+   lws_write(wsi, buf + LWS_PRE, len, LWS_WRITE_TEXT);
+}
 
 /* -------------------------------------------------------------------------
  * Protocol callback
@@ -84,34 +130,24 @@ static int callback_retroarch(struct lws *wsi,
       void *user, void *in, size_t len)
 {
    (void)user;
+   (void)in;
+   (void)len;
 
    switch (reason)
    {
       case LWS_CALLBACK_ESTABLISHED:
-         /* A new client has connected. */
+         /* A new client has connected.  Schedule an immediate write so it
+          * receives the current game state without waiting for a broadcast. */
+         lws_callback_on_writable(wsi);
          break;
 
-      case LWS_CALLBACK_RECEIVE:
-         /* Echo the received data back to the sender as a demonstration.
-          * Replace this block with real message-handling logic as needed. */
-         if (in && len > 0)
-         {
-            /* LWS_PRE bytes of padding are required before the payload. */
-            unsigned char *buf = (unsigned char *)malloc(LWS_PRE + len);
-            if (buf)
-            {
-               memcpy(buf + LWS_PRE, in, len);
-               lws_write(wsi, buf + LWS_PRE, len, LWS_WRITE_TEXT);
-               free(buf);
-            }
-            else
-               fprintf(stderr, "[ws_server] malloc failed for echo buffer "
-                               "(%lu bytes).\n", (unsigned long)(LWS_PRE + len));
-         }
+      case LWS_CALLBACK_SERVER_WRITEABLE:
+         /* Send the current game state to this client. */
+         ws_write_game_state(wsi);
          break;
 
       case LWS_CALLBACK_CLOSED:
-         /* Client disconnected. */
+         /* Client disconnected – nothing to clean up. */
          break;
 
       default:
@@ -146,13 +182,23 @@ static void ws_server_thread(void *userdata)
    for (;;)
    {
       bool running;
+      bool broadcast;
 
       slock_lock(g_lock);
-      running = g_running;
+      running   = g_running;
+      broadcast = g_broadcast_pending;
+      if (broadcast)
+         g_broadcast_pending = false;
       slock_unlock(g_lock);
 
       if (!running)
          break;
+
+      /* If a broadcast was requested, schedule a writeable callback for
+       * every connected client before servicing events.  This call is
+       * safe here because we are on the service thread. */
+      if (broadcast)
+         lws_callback_on_writable_all_protocol(g_lws_ctx, &g_protocols[0]);
 
       /* lws_service() blocks for at most WS_SERVICE_TIMEOUT_MS milliseconds,
        * then returns so we can re-check the stop flag. */
@@ -199,7 +245,8 @@ bool ws_server_init(unsigned port)
    }
 
    slock_lock(g_lock);
-   g_running = true;
+   g_running          = true;
+   g_broadcast_pending = false;
    slock_unlock(g_lock);
 
    g_thread = sthread_create(ws_server_thread, NULL);
@@ -251,4 +298,18 @@ void ws_server_destroy(void)
 
    lws_context_destroy(g_lws_ctx);
    g_lws_ctx = NULL;
+}
+
+void ws_server_notify_game_changed(void)
+{
+   if (!g_lws_ctx || !g_lock)
+      return;
+
+   /* Set the broadcast flag under the lock so the service thread picks it
+    * up safely, then wake the service loop. */
+   slock_lock(g_lock);
+   g_broadcast_pending = true;
+   slock_unlock(g_lock);
+
+   lws_cancel_service(g_lws_ctx);
 }
