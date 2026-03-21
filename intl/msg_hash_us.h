@@ -2487,20 +2487,20 @@ MSG_HASH(
    "scRGB"
    )
 MSG_HASH(
-   MENU_ENUM_LABEL_VALUE_VIDEO_HDR_MAX_NITS,
-   "Peak Luminance"
+   MENU_ENUM_LABEL_VALUE_MENU_HDR_BRIGHTNESS_NITS,
+   "Brightness"
    )
 MSG_HASH(
-   MENU_ENUM_SUBLABEL_VIDEO_HDR_MAX_NITS,
-   "Set the peak luminance (in cd/m2) your display can reproduce. Once set dont change it. Use Paper White Luminance to set brightness. See RTings.com for your display's peak luminance. On some displays with scanlines on (below) you may need to overdrive this (and paper white) to bring the overall brightness up."
+   MENU_ENUM_SUBLABEL_MENU_HDR_BRIGHTNESS_NITS,
+   "Brightness of the menu in cd/m2 (nits) when using an HDR display. Only visible when HDR is enabled in Settings > Video > HDR."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_HDR_PAPER_WHITE_NITS,
-   "Paper White Luminance"
+   "Brightness"
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_HDR_PAPER_WHITE_NITS,
-   "Once peak luminance is set, use this as your standard brightness setting. Technically this sets the luminance at which paper white should be i.e. readable text or luminance at the top of the SDR (Standard Dynamic Range) range."
+   "Sets the HDR brightness level in nits. Use in combination with your display's physical brightness settings. For a starting point, set this to 80 and your display's brightness to full. Alternatively, set this to the max nits of your display and turn your display's brightness down until it looks right."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_HDR_EXPAND_GAMUT,
@@ -2508,7 +2508,7 @@ MSG_HASH(
    )
 MSG_HASH(
    MENU_ENUM_SUBLABEL_VIDEO_HDR_EXPAND_GAMUT,
-   "Uses your display's full colour range to create a brighter, more saturated image. For colours more faithful to the original game design, set this to ACCURATE."
+   "Uses your display's full colour range to create a brighter, more saturated image. For colours more faithful to the original game design, set this to Accurate."
    )
 MSG_HASH(
    MENU_ENUM_LABEL_VALUE_VIDEO_HDR_EXPAND_GAMUT_ACCURATE,

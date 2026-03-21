@@ -229,6 +229,9 @@ static int filebrowser_parse(
 
    if (path_is_compressed)
    {
+      if (filebrowser_type == FILEBROWSER_SELECT_OVERLAY)
+         filter_ext = true;
+
       if (filebrowser_type == FILEBROWSER_SELECT_FILE_SUBSYSTEM)
       {
          runloop_state_t    *runloop_st = runloop_state_get_ptr();
@@ -2868,7 +2871,6 @@ static int menu_displaylist_parse_database_entry(menu_handle_t *menu,
       char tmp[NAME_MAX_LENGTH];
       char crc_str[20];
       database_info_t *db_info_entry = &db_info->list[i];
-      const char *val_str;
       size_t tmp_len;
 
       snprintf(crc_str, sizeof(crc_str), "%08lX", (unsigned long)db_info_entry->crc32);
@@ -3594,7 +3596,9 @@ static int menu_displaylist_parse_load_content_settings(
                      count++;
                }
 
-               if (settings->bools.quick_menu_show_start_streaming)
+               if (  settings->bools.quick_menu_show_start_streaming
+                  && string_is_equal(settings->arrays.record_driver,
+                        "ffmpeg"))
                {
                   if (menu_entries_append(list,
                            msg_hash_to_str(MENU_ENUM_LABEL_VALUE_QUICK_MENU_START_STREAMING),
@@ -5328,13 +5332,11 @@ static int menu_displaylist_parse_audio_device_list(file_list_t *info_list,
    if (!audio_driver_get_devices_list((void**)&ptr))
       return 0;
 
-   if (!ptr)
-      return 0;
-
    /* Get index in the string list */
-   audio_device_index = string_list_find_elem(ptr, setting->value.target.string) - 1;
+   if (ptr)
+      audio_device_index = string_list_find_elem(ptr, setting->value.target.string) - 1;
 
-   /* Add "Default" */
+   /* Add "Default" even if driver fails and device list is empty */
    if (i == -1)
    {
       bool add = false;
@@ -5364,7 +5366,7 @@ static int menu_displaylist_parse_audio_device_list(file_list_t *info_list,
       }
    }
 
-   for (i = 0; i < (int)ptr->size; i++)
+   for (i = 0; ptr && i < (int)ptr->size; i++)
    {
       bool add = false;
 
@@ -9440,27 +9442,43 @@ unsigned menu_displaylist_build_list(
          break;
       case DISPLAYLIST_RECORDING_SETTINGS_LIST:
          {
-            unsigned streaming_mode        = settings->uints.streaming_mode;
+            unsigned streaming_mode = settings->uints.streaming_mode;
+            bool is_ffmpeg          = string_is_equal(
+                  settings->arrays.record_driver, "ffmpeg");
+            bool has_video          = is_ffmpeg
+                  || string_is_equal(
+                     settings->arrays.record_driver, "avfoundation");
             menu_displaylist_build_info_selective_t build_list[] = {
-               {MENU_ENUM_LABEL_VIDEO_RECORD_QUALITY,                                  PARSE_ONLY_UINT,   true},
-               {MENU_ENUM_LABEL_RECORD_CONFIG,                                         PARSE_ONLY_PATH,   true},
-               {MENU_ENUM_LABEL_VIDEO_RECORD_THREADS,                                  PARSE_ONLY_UINT,   true},
-               {MENU_ENUM_LABEL_VIDEO_POST_FILTER_RECORD,                              PARSE_ONLY_BOOL,   true},
-               {MENU_ENUM_LABEL_VIDEO_GPU_RECORD,                                      PARSE_ONLY_BOOL,   true},
-               {MENU_ENUM_LABEL_STREAMING_MODE,                                        PARSE_ONLY_UINT,   true},
-               {MENU_ENUM_LABEL_VIDEO_STREAM_QUALITY,                                  PARSE_ONLY_UINT,   true},
-               {MENU_ENUM_LABEL_STREAM_CONFIG,                                         PARSE_ONLY_PATH,   true},
-               {MENU_ENUM_LABEL_STREAMING_TITLE,                                       PARSE_ONLY_STRING, true},
-               {MENU_ENUM_LABEL_STREAMING_URL,                                         PARSE_ONLY_STRING, true},
-               {MENU_ENUM_LABEL_UDP_STREAM_PORT,                                       PARSE_ONLY_UINT,   true},
+               {MENU_ENUM_LABEL_RECORD_DRIVER,                                         PARSE_ONLY_STRING_OPTIONS, true},
+               {MENU_ENUM_LABEL_VIDEO_RECORD_QUALITY,                                  PARSE_ONLY_UINT,           false},
+               {MENU_ENUM_LABEL_RECORD_CONFIG,                                         PARSE_ONLY_PATH,           false},
+               {MENU_ENUM_LABEL_VIDEO_RECORD_THREADS,                                  PARSE_ONLY_UINT,           false},
+               {MENU_ENUM_LABEL_VIDEO_POST_FILTER_RECORD,                              PARSE_ONLY_BOOL,           false},
+               {MENU_ENUM_LABEL_VIDEO_GPU_RECORD,                                      PARSE_ONLY_BOOL,           false},
+               {MENU_ENUM_LABEL_STREAMING_MODE,                                        PARSE_ONLY_UINT,           false},
+               {MENU_ENUM_LABEL_VIDEO_STREAM_QUALITY,                                  PARSE_ONLY_UINT,           false},
+               {MENU_ENUM_LABEL_STREAM_CONFIG,                                         PARSE_ONLY_PATH,           false},
+               {MENU_ENUM_LABEL_STREAMING_TITLE,                                       PARSE_ONLY_STRING,         false},
+               {MENU_ENUM_LABEL_STREAMING_URL,                                         PARSE_ONLY_STRING,         false},
+               {MENU_ENUM_LABEL_UDP_STREAM_PORT,                                       PARSE_ONLY_UINT,           false},
             };
+            build_list[1].checked  = has_video; /* MENU_ENUM_LABEL_VIDEO_RECORD_QUALITY */
+            build_list[2].checked  = is_ffmpeg; /* MENU_ENUM_LABEL_RECORD_CONFIG */
+            build_list[3].checked  = is_ffmpeg; /* MENU_ENUM_LABEL_VIDEO_RECORD_THREADS */
+            build_list[4].checked  = has_video; /* MENU_ENUM_LABEL_VIDEO_POST_FILTER_RECORD */
+            build_list[5].checked  = has_video; /* MENU_ENUM_LABEL_VIDEO_GPU_RECORD */
+            build_list[6].checked  = is_ffmpeg; /* MENU_ENUM_LABEL_STREAMING_MODE */
+            build_list[7].checked  = is_ffmpeg; /* MENU_ENUM_LABEL_VIDEO_STREAM_QUALITY */
+            build_list[8].checked  = is_ffmpeg; /* MENU_ENUM_LABEL_STREAM_CONFIG */
+            build_list[9].checked  = is_ffmpeg; /* MENU_ENUM_LABEL_STREAMING_TITLE */
+            build_list[10].checked = is_ffmpeg; /* MENU_ENUM_LABEL_STREAMING_URL */
 
             for (i = 0; i < ARRAY_SIZE(build_list); i++)
             {
                switch (build_list[i].enum_idx)
                {
                   case MENU_ENUM_LABEL_UDP_STREAM_PORT:
-                     if (streaming_mode == STREAMING_MODE_LOCAL)
+                     if (is_ffmpeg && streaming_mode == STREAMING_MODE_LOCAL)
                         build_list[i].checked = true;
                      break;
                   default:
@@ -10066,10 +10084,6 @@ unsigned menu_displaylist_build_list(
                   count++;
                if (settings->uints.video_hdr_mode > 0)
                {
-                  if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
-                           MENU_ENUM_LABEL_VIDEO_HDR_MAX_NITS,
-                           PARSE_ONLY_FLOAT, false) == 0)
-                     count++;
                   if (MENU_DISPLAYLIST_PARSE_SETTINGS_ENUM(list,
                            MENU_ENUM_LABEL_VIDEO_HDR_PAPER_WHITE_NITS,
                            PARSE_ONLY_FLOAT, false) == 0)
@@ -11824,6 +11838,7 @@ unsigned menu_displaylist_build_list(
                {MENU_ENUM_LABEL_MENU_SCALE_FACTOR,                            PARSE_ONLY_FLOAT,  true},
                {MENU_ENUM_LABEL_OZONE_PADDING_FACTOR,                         PARSE_ONLY_FLOAT,  true},
                {MENU_ENUM_LABEL_MENU_FRAMEBUFFER_OPACITY,                     PARSE_ONLY_FLOAT,  true},
+               {MENU_ENUM_LABEL_MENU_HDR_BRIGHTNESS_NITS,                         PARSE_ONLY_FLOAT,  false},
                {MENU_ENUM_LABEL_XMB_RIBBON_ENABLE,                            PARSE_ONLY_UINT,   true},
                {MENU_ENUM_LABEL_XMB_THEME,                                    PARSE_ONLY_UINT,   true},
                {MENU_ENUM_LABEL_XMB_MENU_COLOR_THEME,                         PARSE_ONLY_UINT,   true},
@@ -11964,6 +11979,10 @@ unsigned menu_displaylist_build_list(
                      break;
                   case MENU_ENUM_LABEL_OZONE_SORT_AFTER_TRUNCATE_PLAYLIST_NAME:
                      if (truncate_playlist)
+                        build_list[i].checked = true;
+                     break;
+                  case MENU_ENUM_LABEL_MENU_HDR_BRIGHTNESS_NITS:
+                     if (settings->uints.video_hdr_mode > 0)
                         build_list[i].checked = true;
                      break;
                   default:
@@ -15769,6 +15788,7 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type,
                case DISPLAYLIST_OVERLAYS:
                   info->type_default = FILE_TYPE_OVERLAY;
                   info->exts         = strldup("cfg", sizeof("cfg"));
+                  filebrowser_set_type(FILEBROWSER_SELECT_OVERLAY);
                   break;
                case DISPLAYLIST_OSK_OVERLAYS:
                   info->type_default = FILE_TYPE_OSK_OVERLAY;
@@ -16295,7 +16315,6 @@ bool menu_displaylist_ctl(enum menu_displaylist_ctl_state type,
                         {
                            char val_d[16];
                            const char *p       = setting->values;
-                           const char *tok;
                            unsigned i          = 0;
                            int checked_found   = 0;
                            unsigned checked    = 0;

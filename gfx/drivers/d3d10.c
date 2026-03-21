@@ -2252,7 +2252,7 @@ static void *d3d10_gfx_init(const video_info_t* video,
          utf16_to_char_string((const uint16_t*)
                desc.Description, str, sizeof(str));
 
-         RARCH_LOG("[D3D10] Found GPU at index %d: \"%s\".\n", i, str);
+         RARCH_LOG("[D3D10] Found GPU #%d: \"%s\".\n", i, str);
 
          string_list_append(d3d10->gpu_list, str, attr);
 
@@ -2266,9 +2266,9 @@ static void *d3d10_gfx_init(const video_info_t* video,
 
       if (0 <= gpu_index && gpu_index <= i && (gpu_index < D3D10_MAX_GPU_COUNT))
       {
+         RARCH_LOG("[D3D10] Using GPU #%d: \"%s\".\n", gpu_index, d3d10->gpu_list->elems[gpu_index].data);
          d3d10->current_adapter = d3d10->adapters[gpu_index];
          d3d10->adapter         = d3d10->current_adapter;
-         RARCH_LOG("[D3D10] Using GPU index %d.\n", gpu_index);
       }
       else
       {
@@ -3268,7 +3268,7 @@ static const video_poke_interface_t d3d10_poke_interface = {
 #else
    NULL, /* get_hw_render_interface */
 #endif
-   NULL, /* set_hdr_max_nits */
+   NULL, /* set_hdr_menu_nits */
    NULL, /* set_hdr_paper_white_nits */
    NULL, /* set_hdr_expand_gamut */
    NULL, /* set_hdr_scanlines */
