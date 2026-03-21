@@ -85,11 +85,13 @@ static void json_append_field(char *buf, size_t *pos,
    if (n > 0)
       *pos += (size_t)n;
 
-   /* Escape and copy the value character-by-character */
+   /* Escape and copy the value character-by-character.
+    * Reserve 2 bytes for a potential 2-byte escape sequence ('\\' + char);
+    * the closing '"' is appended separately after the loop. */
    if (!string_is_empty(value))
    {
       const unsigned char *src = (const unsigned char *)value;
-      while (*src && *pos + 3 < buf_size) /* +3: escape + char + closing " */
+      while (*src && *pos + 2 < buf_size)
       {
          unsigned char c = *src++;
          if (c == '"' || c == '\\')
