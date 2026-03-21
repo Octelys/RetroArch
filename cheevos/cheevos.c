@@ -482,6 +482,12 @@ static void rcheevos_award_achievement(const rc_client_achievement_t* cheevo)
       }
    }
 #endif
+
+#ifdef HAVE_WEBSOCKET_SERVER
+   /* Broadcast the updated achievement list so connected clients
+    * immediately see the new unlock status. */
+   ws_server_notify_achievements_changed();
+#endif
 }
 
 static void rcheevos_lboard_submitted(const rc_client_leaderboard_t* lboard,

@@ -96,38 +96,39 @@
 #define WS_ACH_MSG_MAX_BYTES (256 * 1024)
 
 /* -------------------------------------------------------------------------
- * Per-session write state
- *
- * libwebsockets fires LWS_CALLBACK_SERVER_WRITEABLE once per scheduled
- * wsi.  We use per-session data to remember which message the client
- * still needs so that both game-state and achievements are delivered in
- * order without re-scheduling a broadcast for every client separately.
- * ---------------------------------------------------------------------- */
-
-typedef enum {
-   WS_WRITE_IDLE        = 0,  /* nothing queued                  */
-   WS_WRITE_GAME_STATE  = 1,  /* send game-state next            */
-   WS_WRITE_ACHIEVEMENTS = 2  /* send achievements next          */
-} ws_write_state_t;
-
-typedef struct {
-   ws_write_state_t next_write;
-} ws_session_data_t;
-
-/* -------------------------------------------------------------------------
  * Internal state
  * ---------------------------------------------------------------------- */
 
-static struct lws_context *g_lws_ctx            = NULL;
-static sthread_t          *g_thread             = NULL;
-static slock_t            *g_lock               = NULL;
-static bool                g_running            = false;
-static bool                g_broadcast_pending  = false;
-static bool                g_ach_pending        = false;
+static struct lws_context *g_lws_ctx               = NULL;
+static sthread_t          *g_thread                = NULL;
+static slock_t            *g_lock                  = NULL;
+static bool                g_running               = false;
+static bool                g_game_broadcast_pending = false;
+static bool                g_ach_broadcast_pending  = false;
 
-/* Tells the WRITEABLE callback which message to deliver during a broadcast.
- * Only read/written on the service thread after draining the flags above. */
-static ws_write_state_t    g_broadcast_type     = WS_WRITE_IDLE;
+/* Written by the service thread before lws_callback_on_writable_all_protocol,
+ * read inside the WRITEABLE callback — both on the same service thread.
+ * Holds a WS_MSG_* bitmask indicating which messages the broadcast delivers. */
+static int                 g_broadcast_kind         = 0;
+
+/* -------------------------------------------------------------------------
+ * Per-session data
+ *
+ * pending_messages: bitmask of messages yet to be sent to this client.
+ *   WS_MSG_GAME_STATE   (bit 0) – game state JSON
+ *   WS_MSG_ACHIEVEMENTS (bit 1) – achievements JSON
+ *
+ * Each WRITEABLE invocation sends exactly ONE message and clears its bit.
+ * If more bits remain it calls lws_callback_on_writable() to schedule
+ * the next write.  This ensures lws never has to retry a partial write,
+ * which is what causes the infinite WRITEABLE loop.
+ * ---------------------------------------------------------------------- */
+#define WS_MSG_GAME_STATE   (1 << 0)
+#define WS_MSG_ACHIEVEMENTS (1 << 1)
+
+typedef struct {
+   int pending_messages;
+} ws_session_t;
 
 /* -------------------------------------------------------------------------
  * Helper: write the current game state to a single client
@@ -196,7 +197,7 @@ static int callback_retroarch(struct lws *wsi,
       enum lws_callback_reasons reason,
       void *user, void *in, size_t len)
 {
-   ws_session_data_t *session = (ws_session_data_t *)user;
+   ws_session_t *session = (ws_session_t *)user;
 
    (void)in;
    (void)len;
@@ -204,31 +205,46 @@ static int callback_retroarch(struct lws *wsi,
    switch (reason)
    {
       case LWS_CALLBACK_ESTABLISHED:
-         /* A new client connected: queue game-state first. */
+         /* New client: queue both messages and request the first write. */
          if (session)
-            session->next_write = WS_WRITE_GAME_STATE;
+            session->pending_messages = WS_MSG_GAME_STATE | WS_MSG_ACHIEVEMENTS;
+         fprintf(stderr, "[ws_server] CONNECTED\n");
          lws_callback_on_writable(wsi);
          break;
 
       case LWS_CALLBACK_SERVER_WRITEABLE:
          if (!session)
             break;
-         /* If this write was triggered by a broadcast (session is IDLE),
-          * adopt the global broadcast type first. */
-         if (session->next_write == WS_WRITE_IDLE)
-            session->next_write = g_broadcast_type;
 
-         if (session->next_write == WS_WRITE_GAME_STATE)
+         /* If nothing is queued on this session yet, this WRITEABLE was
+          * triggered by a broadcast — adopt the broadcast's message set
+          * and clear g_broadcast_kind so subsequent unsolicited WRITEABLE
+          * callbacks (fired while lws drains large payloads) don't
+          * re-adopt it. */
+         if (session->pending_messages == 0)
          {
+            session->pending_messages = g_broadcast_kind;
+            g_broadcast_kind          = 0;
+         }
+
+         /* Send exactly one message per WRITEABLE invocation. */
+         if (session->pending_messages & WS_MSG_GAME_STATE)
+         {
+            session->pending_messages &= ~WS_MSG_GAME_STATE;
+            fprintf(stderr, "[ws_server] WRITE GAME\n");
             ws_write_game_state(wsi);
-            session->next_write = WS_WRITE_ACHIEVEMENTS;
-            lws_callback_on_writable(wsi);
          }
-         else if (session->next_write == WS_WRITE_ACHIEVEMENTS)
+         else if (session->pending_messages & WS_MSG_ACHIEVEMENTS)
          {
+            session->pending_messages &= ~WS_MSG_ACHIEVEMENTS;
+            fprintf(stderr, "[ws_server] WRITE ACHIEVEMENTS\n");
             ws_write_achievements(wsi);
-            session->next_write = WS_WRITE_IDLE;
          }
+
+         /* If more messages remain, schedule the next write. */
+         if (session->pending_messages != 0)
+            lws_callback_on_writable(wsi);
+
          break;
 
       case LWS_CALLBACK_CLOSED:
@@ -249,7 +265,7 @@ static struct lws_protocols g_protocols[] = {
    {
       "retroarch",
       callback_retroarch,
-      sizeof(ws_session_data_t),  /* per-session data size */
+      sizeof(ws_session_t),  /* per-session data size */
       WS_RX_BUFFER_BYTES
    },
    { NULL, NULL, 0, 0 }
@@ -266,32 +282,40 @@ static void ws_server_thread(void *userdata)
    for (;;)
    {
       bool running;
-      bool broadcast;
+      bool game_broadcast;
       bool ach_broadcast;
 
       slock_lock(g_lock);
-      running       = g_running;
-      broadcast     = g_broadcast_pending;
-      ach_broadcast = g_ach_pending;
-      if (broadcast)
-         g_broadcast_pending = false;
+      running        = g_running;
+      game_broadcast = g_game_broadcast_pending;
+      ach_broadcast  = g_ach_broadcast_pending;
+      if (game_broadcast)
+         g_game_broadcast_pending = false;
       if (ach_broadcast)
-         g_ach_pending = false;
+         g_ach_broadcast_pending = false;
       slock_unlock(g_lock);
 
       if (!running)
          break;
 
-      /* Game-state broadcast: send game_state then achievements to all. */
-      if (broadcast)
+      if (game_broadcast || ach_broadcast)
       {
-         g_broadcast_type = WS_WRITE_GAME_STATE;
-         lws_callback_on_writable_all_protocol(g_lws_ctx, &g_protocols[0]);
-      }
-      /* Achievements-only broadcast (e.g. unlock update in future). */
-      else if (ach_broadcast)
-      {
-         g_broadcast_type = WS_WRITE_ACHIEVEMENTS;
+         /* Store the broadcast kind so the WRITEABLE callback knows which
+          * messages to send.  Written here on the service thread, read and
+          * cleared inside the WRITEABLE callback which also runs on the
+          * service thread — so no races.
+          *
+          * We must NOT reset g_broadcast_kind here before lws_service():
+          * the WRITEABLE callbacks are fired *inside* lws_service(), so
+          * they would always see 0 and skip the write.  Instead the
+          * callback itself clears g_broadcast_kind after adopting it into
+          * the per-session pending_messages bitmask.  That way any extra
+          * unsolicited WRITEABLE callbacks that lws fires while draining
+          * large payloads still find pending_messages == 0 and
+          * g_broadcast_kind == 0 and return without doing anything. */
+         g_broadcast_kind = game_broadcast
+               ? (WS_MSG_GAME_STATE | WS_MSG_ACHIEVEMENTS)
+               : WS_MSG_ACHIEVEMENTS;
          lws_callback_on_writable_all_protocol(g_lws_ctx, &g_protocols[0]);
       }
 
@@ -328,6 +352,7 @@ bool ws_server_init(unsigned port)
       return false;
    }
 
+
    g_lock = slock_new();
    if (!g_lock)
    {
@@ -339,7 +364,8 @@ bool ws_server_init(unsigned port)
 
    slock_lock(g_lock);
    g_running          = true;
-   g_broadcast_pending = false;
+   g_game_broadcast_pending = false;
+   g_ach_broadcast_pending  = false;
    slock_unlock(g_lock);
 
    g_thread = sthread_create(ws_server_thread, NULL);
@@ -399,20 +425,22 @@ void ws_server_notify_game_changed(void)
       return;
 
    slock_lock(g_lock);
-   g_broadcast_pending = true;
+   fprintf(stderr, "[ws_server] ws_server_notify_game_changed\n");
+   g_game_broadcast_pending = true;
    slock_unlock(g_lock);
 
    lws_cancel_service(g_lws_ctx);
 }
 
-void ws_server_notify_achievements_loaded(void)
+void ws_server_notify_achievements_changed(void)
 {
    if (!g_lws_ctx || !g_lock)
       return;
 
    slock_lock(g_lock);
-   g_ach_pending = true;
+   g_ach_broadcast_pending = true;
    slock_unlock(g_lock);
 
    lws_cancel_service(g_lws_ctx);
 }
+

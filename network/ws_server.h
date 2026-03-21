@@ -51,9 +51,10 @@ void ws_server_destroy(void);
 /**
  * ws_server_notify_game_changed:
  *
- * Broadcasts the current game state (obtained from game_state_to_json()) to
- * all connected WebSocket clients.  The message is sent asynchronously by
- * the background service thread; this function returns immediately.
+ * Broadcasts the current game state (obtained from game_state_to_json())
+ * followed immediately by the achievements list to all connected WebSocket
+ * clients.  Both messages are sent asynchronously by the background service
+ * thread; this function returns immediately.
  *
  * Call this whenever the active game changes (start or stop).  Safe to call
  * from any thread while the server is running; no-op when the server is not
@@ -62,15 +63,14 @@ void ws_server_destroy(void);
 void ws_server_notify_game_changed(void);
 
 /**
- * ws_server_notify_achievements_loaded:
+ * ws_server_notify_achievements_changed:
  *
- * Broadcasts the achievements list (obtained from
- * game_state_achievements_to_json()) to all connected WebSocket clients.
- * Sent as a second message immediately after ws_server_notify_game_changed()
- * when a new game is identified.  Safe to call from any thread while the
- * server is running; no-op when the server is not initialised.
+ * Broadcasts the updated achievements list to all connected WebSocket
+ * clients.  Call this when an achievement is unlocked.  Safe to call
+ * from any thread while the server is running.
  */
-void ws_server_notify_achievements_loaded(void);
+void ws_server_notify_achievements_changed(void);
+
 
 #ifdef __cplusplus
 }

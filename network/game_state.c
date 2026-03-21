@@ -263,7 +263,6 @@ void game_state_update_from_cheevos(const rc_client_game_t *game,
 
    game_state_set(&state);
    ws_server_notify_game_changed();
-   ws_server_notify_achievements_loaded();
 }
 
 /**
