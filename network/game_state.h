@@ -37,6 +37,7 @@
 #ifndef RC_CLIENT_H
 typedef struct rc_client_t      rc_client_t;
 typedef struct rc_client_game_t rc_client_game_t;
+typedef struct rc_client_user_t rc_client_user_t;
 #endif
 #endif
 
@@ -162,6 +163,34 @@ size_t game_state_to_json(char *buf, size_t buf_size);
  * Thread-safe.
  */
 void game_state_update_from_cheevos(const rc_client_game_t *game, const char *game_path);
+
+/**
+ * game_state_set_user_from_cheevos:
+ * @user : rc_client_user_t returned by rc_client_get_user_info().
+ *
+ * Stores the logged-in user's display name, score, and avatar URL so
+ * that game_state_user_to_json() can serialize them.  Thread-safe.
+ */
+void game_state_set_user_from_cheevos(const rc_client_user_t *user);
+
+/**
+ * game_state_user_to_json:
+ * @buf      : destination buffer.
+ * @buf_size : total size of @buf in bytes.
+ *
+ * Serialises the logged-in RA user as a JSON object:
+ *   { "type":"user",
+ *     "username":"...", "display_name":"...",
+ *     "score":N, "score_softcore":N,
+ *     "avatar_url":"..." }
+ *
+ * When no user is logged in:
+ *   { "type":"no_user" }
+ *
+ * Returns the number of bytes written (excluding NUL), or 0 on error.
+ * Thread-safe.
+ */
+size_t game_state_user_to_json(char *buf, size_t buf_size);
 
 /**
  * game_state_achievements_to_json:

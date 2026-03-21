@@ -71,6 +71,16 @@ void ws_server_notify_game_changed(void);
  */
 void ws_server_notify_achievements_changed(void);
 
+/**
+ * ws_server_notify_user_changed:
+ *
+ * Broadcasts the current RA user info (username, display name, score,
+ * avatar URL) to all connected WebSocket clients.  Call this after a
+ * successful RetroAchievements login.  Safe to call from any thread
+ * while the server is running.
+ */
+void ws_server_notify_user_changed(void);
+
 
 #ifdef __cplusplus
 }

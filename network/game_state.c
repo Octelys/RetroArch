@@ -46,6 +46,21 @@ static slock_t       *g_state_lock = NULL;
 static ra_game_state_t g_state;
 static bool            g_is_running = false;
 
+#ifdef HAVE_CHEEVOS
+/* Logged-in RetroAchievements user (set once on login). */
+typedef struct
+{
+   char     username    [128];
+   char     display_name[128];
+   char     avatar_url  [512];
+   uint32_t score;
+   uint32_t score_softcore;
+   bool     is_logged_in;
+} ra_user_state_t;
+
+static ra_user_state_t g_user_state;
+#endif
+
 /* -------------------------------------------------------------------------
  * Lifecycle
  * ---------------------------------------------------------------------- */
@@ -57,6 +72,9 @@ void game_state_init(void)
    g_state_lock = slock_new();
    memset(&g_state, 0, sizeof(g_state));
    g_is_running = false;
+#ifdef HAVE_CHEEVOS
+   memset(&g_user_state, 0, sizeof(g_user_state));
+#endif
 }
 
 void game_state_deinit(void)
@@ -349,6 +367,97 @@ size_t game_state_achievements_to_json(const rc_client_t *client,
       pos += (size_t)n;
 
    buf[pos < buf_size ? pos : buf_size - 1] = '\0';
+   return pos;
+}
+
+/**
+ * game_state_set_user_from_cheevos:
+ *
+ * Copies the logged-in RA user information into the internal user state
+ * so that game_state_user_to_json() can serialise it at any time.
+ * Called from rcheevos_client_login_callback() once the async login
+ * request has succeeded.
+ */
+void game_state_set_user_from_cheevos(const rc_client_user_t *user)
+{
+   if (!user || !g_state_lock)
+      return;
+
+   slock_lock(g_state_lock);
+   memset(&g_user_state, 0, sizeof(g_user_state));
+
+   if (!string_is_empty(user->username))
+      strlcpy(g_user_state.username, user->username,
+            sizeof(g_user_state.username));
+
+   if (!string_is_empty(user->display_name))
+      strlcpy(g_user_state.display_name, user->display_name,
+            sizeof(g_user_state.display_name));
+
+   if (!string_is_empty(user->avatar_url))
+      strlcpy(g_user_state.avatar_url, user->avatar_url,
+            sizeof(g_user_state.avatar_url));
+
+   g_user_state.score           = user->score;
+   g_user_state.score_softcore  = user->score_softcore;
+   g_user_state.is_logged_in    = true;
+
+   slock_unlock(g_state_lock);
+}
+
+/**
+ * game_state_user_to_json:
+ *
+ * Serialises the current logged-in RA user as a JSON object.  Returns
+ * the number of bytes written or 0 on error.
+ */
+size_t game_state_user_to_json(char *buf, size_t buf_size)
+{
+   ra_user_state_t snap;
+   size_t          pos = 0;
+   int             n;
+
+   if (!buf || buf_size < 2)
+      return 0;
+
+   if (g_state_lock)
+   {
+      slock_lock(g_state_lock);
+      snap = g_user_state;
+      slock_unlock(g_state_lock);
+   }
+   else
+   {
+      memset(&snap, 0, sizeof(snap));
+   }
+
+   if (!snap.is_logged_in)
+   {
+      n = snprintf(buf, buf_size, "{\"type\":\"no_user\"}");
+      return (n > 0) ? (size_t)n : 0;
+   }
+
+   n = snprintf(buf, buf_size, "{\"type\":\"user\"");
+   if (n <= 0)
+      return 0;
+   pos = (size_t)n;
+
+   json_append_field(buf, &pos, buf_size, "username",     snap.username);
+   json_append_field(buf, &pos, buf_size, "display_name", snap.display_name);
+   json_append_field(buf, &pos, buf_size, "avatar_url",   snap.avatar_url);
+
+   n = snprintf(buf + pos, buf_size - pos,
+         ",\"score\":%u,\"score_softcore\":%u",
+         (unsigned)snap.score, (unsigned)snap.score_softcore);
+   if (n > 0)
+      pos += (size_t)n;
+
+   if (pos + 1 < buf_size)
+   {
+      buf[pos++] = '}';
+      buf[pos]   = '\0';
+   }
+
    return pos;
 }
 #endif

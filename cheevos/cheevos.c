@@ -1515,6 +1515,12 @@ static void rcheevos_client_login_callback(int result,
          runloop_msg_queue_push(msg, _len, 0, 2 * 60, false, NULL,
             MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO);
       }
+
+#ifdef HAVE_WEBSOCKET_SERVER
+      /* Broadcast the user info to any already-connected WebSocket clients. */
+      game_state_set_user_from_cheevos(user);
+      ws_server_notify_user_changed();
+#endif
    }
 }
 
