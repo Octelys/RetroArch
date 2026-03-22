@@ -288,11 +288,12 @@ void game_state_update_from_cheevos(const rc_client_game_t *game,
  *
  * Iterates all core achievements for the loaded game and serializes
  * them as a JSON object.  Each entry contains:
- *   id        – numeric achievement ID
- *   name      – achievement title
- *   points    – point value
- *   status    – "unlocked" or "locked"
- *   badge_url – unlocked badge image URL (omitted when unavailable)
+ *   id          – numeric achievement ID
+ *   name        – achievement title
+ *   description – achievement description text
+ *   points      – point value
+ *   status      – "unlocked" or "locked"
+ *   badge_url   – unlocked badge image URL (omitted when unavailable)
  */
 size_t game_state_achievements_to_json(const rc_client_t *client,
       char *buf, size_t buf_size)
@@ -345,8 +346,9 @@ size_t game_state_achievements_to_json(const rc_client_t *client,
             if (n > 0)
                pos += (size_t)n;
 
-            /* name – JSON-escaped via json_append_field */
-            json_append_field(buf, &pos, buf_size, "name", ach->title);
+            /* name and description – JSON-escaped via json_append_field */
+            json_append_field(buf, &pos, buf_size, "name",        ach->title);
+            json_append_field(buf, &pos, buf_size, "description", ach->description);
 
             /* badge_url – use the unlocked URL when present */
             if (!string_is_empty(ach->badge_url))

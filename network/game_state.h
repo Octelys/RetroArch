@@ -202,7 +202,7 @@ size_t game_state_user_to_json(char *buf, size_t buf_size);
  * JSON object of the shape:
  *   { "type":"achievements",
  *     "items": [
- *       { "id":1, "name":"...", "points":5,
+ *       { "id":1, "name":"...", "description":"...", "points":5,
  *         "status":"unlocked",
  *         "badge_url":"https://..." },
  *       ...
