@@ -220,11 +220,9 @@ size_t game_state_to_json(char *buf, size_t buf_size)
 
    json_append_field(buf, &pos, buf_size, "game_id",      snap.game_id);
    json_append_field(buf, &pos, buf_size, "game_name",    snap.game_name);
-   json_append_field(buf, &pos, buf_size, "game_path",    snap.game_path);
    json_append_field(buf, &pos, buf_size, "console_id",   snap.console_id);
    json_append_field(buf, &pos, buf_size, "console_name", snap.console_name);
-   json_append_field(buf, &pos, buf_size, "core_name",    snap.core_name);
-   json_append_field(buf, &pos, buf_size, "db_name",      snap.db_name);
+   json_append_field(buf, &pos, buf_size, "cover_url",    snap.cover_url);
 
    /* Close object */
    if (pos + 1 < buf_size)
@@ -243,12 +241,12 @@ size_t game_state_to_json(char *buf, size_t buf_size)
  * Sole entry-point for populating and broadcasting the WebSocket game
  * state.  Called from rcheevos_client_load_game_callback() once the
  * async RetroAchievements lookup has completed.  Builds a fresh
- * ra_game_state_t entirely from RA data + the ROM path:
+ * ra_game_state_t entirely from RA data:
  *
  *   id         → game_id      (authoritative numeric RA game ID)
  *   title      → game_name    (RA-canonical title)
  *   console_id → console_name (human-readable via rc_console_name())
- *   game_path  → game_path    (full filesystem path to the ROM)
+ *   badge_url  → cover_url    (game cover image URL)
  */
 void game_state_update_from_cheevos(const rc_client_game_t *game,
       const char *game_path)
@@ -267,10 +265,6 @@ void game_state_update_from_cheevos(const rc_client_game_t *game,
    if (!string_is_empty(game->title))
       strlcpy(state.game_name, game->title, sizeof(state.game_name));
 
-   /* Full filesystem path to the ROM */
-   if (!string_is_empty(game_path))
-      strlcpy(state.game_path, game_path, sizeof(state.game_path));
-
    /* Human-readable console name */
    if (game->console_id != 0)
    {
@@ -278,6 +272,10 @@ void game_state_update_from_cheevos(const rc_client_game_t *game,
       if (!string_is_empty(con))
          strlcpy(state.console_name, con, sizeof(state.console_name));
    }
+
+   /* Game cover/badge URL from RetroAchievements */
+   if (!string_is_empty(game->badge_url))
+      strlcpy(state.cover_url, game->badge_url, sizeof(state.cover_url));
 
    game_state_set(&state);
    ws_server_notify_game_changed();

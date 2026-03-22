@@ -48,11 +48,9 @@ extern "C" {
 /* Maximum lengths for each field (including NUL terminator). */
 #define GAME_STATE_GAME_ID_LEN      64
 #define GAME_STATE_GAME_NAME_LEN    512
-#define GAME_STATE_GAME_PATH_LEN    4096
 #define GAME_STATE_CONSOLE_ID_LEN   64
 #define GAME_STATE_CONSOLE_NAME_LEN 256
-#define GAME_STATE_CORE_NAME_LEN    256
-#define GAME_STATE_DB_NAME_LEN      512
+#define GAME_STATE_COVER_URL_LEN    512
 
 /**
  * ra_game_state_t:
@@ -62,23 +60,20 @@ extern "C" {
  *   game_id       – CRC-32 checksum of the ROM as a hex string (may be
  *                   empty if unknown).
  *   game_name     – Base filename of the ROM without extension.
- *   game_path     – Full filesystem path to the ROM.
  *   console_id    – Short system/platform identifier supplied by the
  *                   core info database (e.g. "snes", "megadrive").
  *   console_name  – Human-readable platform name (e.g.
  *                   "Super Nintendo Entertainment System").
- *   core_name     – Name of the libretro core that is running the game.
- *   db_name       – Playlist/database name associated with the content.
+ *   cover_url     – URL of the game cover/badge image from
+ *                   RetroAchievements (may be empty if unavailable).
  */
 typedef struct
 {
    char game_id      [GAME_STATE_GAME_ID_LEN];
    char game_name    [GAME_STATE_GAME_NAME_LEN];
-   char game_path    [GAME_STATE_GAME_PATH_LEN];
    char console_id   [GAME_STATE_CONSOLE_ID_LEN];
    char console_name [GAME_STATE_CONSOLE_NAME_LEN];
-   char core_name    [GAME_STATE_CORE_NAME_LEN];
-   char db_name      [GAME_STATE_DB_NAME_LEN];
+   char cover_url    [GAME_STATE_COVER_URL_LEN];
 } ra_game_state_t;
 
 /**
@@ -139,9 +134,9 @@ bool game_state_get(ra_game_state_t *out);
  *
  * When a game is running the object has the shape:
  *   { "type":"game_playing",
- *     "game_id":"...", "game_name":"...", "game_path":"...",
+ *     "game_id":"...", "game_name":"...",
  *     "console_id":"...", "console_name":"...",
- *     "core_name":"...", "db_name":"..." }
+ *     "cover_url":"..." }
  *
  * When no game is running:
  *   { "type":"no_game" }
