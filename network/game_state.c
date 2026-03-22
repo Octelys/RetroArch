@@ -299,13 +299,30 @@ size_t game_state_achievements_to_json(const rc_client_t *client,
       char *buf, size_t buf_size)
 {
    rc_client_achievement_list_t *list;
-   size_t   pos  = 0;
-   int      n;
-   uint32_t bi, ai;
-   bool     first = true;
+   rc_client_subset_list_t      *subset_list;
+   uint32_t  base_subset_id = 0;
+   size_t    pos            = 0;
+   int       n;
+   uint32_t  bi, ai;
+   bool      first          = true;
 
    if (!client || !buf || buf_size < 2)
       return 0;
+
+   /* Determine the core subset id deterministically.
+    * rc_client_create_subset_list always places the core (base) set at
+    * index 0 — it is prepended in rcheevos internals while addon subsets
+    * are appended.  When num_subsets > 1 rcheevos sets bucket->subset_id
+    * to the subset's own id, so we need this value to identify base-game
+    * buckets.  When there is only one subset subset_id is always 0, so
+    * the comparison below still works correctly. */
+   subset_list = rc_client_create_subset_list((rc_client_t *)client);
+   if (subset_list)
+   {
+      if (subset_list->num_subsets > 0)
+         base_subset_id = subset_list->subsets[0]->id;
+      rc_client_destroy_subset_list(subset_list);
+   }
 
    /* Open the envelope */
    n = snprintf(buf, buf_size, "{\"type\":\"achievements\",\"items\":[");
@@ -313,7 +330,6 @@ size_t game_state_achievements_to_json(const rc_client_t *client,
       return 0;
    pos = (size_t)n;
 
-   /* Enumerate core achievements grouped by lock-state bucket */
    list = rc_client_create_achievement_list(
          (rc_client_t *)client,
          RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE,
@@ -324,14 +340,32 @@ size_t game_state_achievements_to_json(const rc_client_t *client,
       for (bi = 0; bi < list->num_buckets; bi++)
       {
          const rc_client_achievement_bucket_t *bucket = &list->buckets[bi];
+
+         /* Only LOCKED and UNLOCKED buckets. */
+         if (bucket->bucket_type != RC_CLIENT_ACHIEVEMENT_BUCKET_LOCKED &&
+             bucket->bucket_type != RC_CLIENT_ACHIEVEMENT_BUCKET_UNLOCKED)
+            continue;
+
+         /* When multiple subsets are loaded each bucket carries the id of
+          * the subset it belongs to.  Only keep buckets from the core set.
+          * When there is only one subset, rcheevos sets subset_id=0 for all
+          * buckets regardless of the real subset id, so accept both 0 and
+          * the actual base subset id. */
+         if (bucket->subset_id != base_subset_id)
+            continue;
+
          for (ai = 0; ai < bucket->num_achievements; ai++)
          {
             const rc_client_achievement_t *ach = bucket->achievements[ai];
-            const char *status =
-                  (ach->unlocked != RC_CLIENT_ACHIEVEMENT_UNLOCKED_NONE)
+            const char *status;
+
+            /* Belt-and-suspenders: only core achievements. */
+            if (ach->category != RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE)
+               continue;
+
+            status = (ach->unlocked != RC_CLIENT_ACHIEVEMENT_UNLOCKED_NONE)
                   ? "unlocked" : "locked";
 
-            /* Separator between items */
             if (!first)
             {
                if (pos + 1 < buf_size)
@@ -339,22 +373,18 @@ size_t game_state_achievements_to_json(const rc_client_t *client,
             }
             first = false;
 
-            /* id, name, points, status */
             n = snprintf(buf + pos, buf_size - pos,
                   "{\"id\":%u,\"points\":%u,\"status\":\"%s\"",
                   (unsigned)ach->id, (unsigned)ach->points, status);
             if (n > 0)
                pos += (size_t)n;
 
-            /* name and description – JSON-escaped via json_append_field */
             json_append_field(buf, &pos, buf_size, "name",        ach->title);
             json_append_field(buf, &pos, buf_size, "description", ach->description);
 
-            /* badge_url – use the unlocked URL when present */
             if (!string_is_empty(ach->badge_url))
                json_append_field(buf, &pos, buf_size, "badge_url", ach->badge_url);
 
-            /* Close the achievement object */
             if (pos + 1 < buf_size)
                buf[pos++] = '}';
          }
